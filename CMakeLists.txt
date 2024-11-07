@@ -3,5 +3,8 @@ project(testTerminals)
 
 set(CMAKE_CXX_STANDARD 23)
 
-add_executable(testTerminals main.cpp
-        game_player.cpp)
+# Create the launcher executable
+add_executable(launcher main.cpp)
+
+# Create the game player executable
+add_executable(game_player game_player.cpp)

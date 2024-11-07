@@ -12,7 +12,7 @@ void launchTerminal(int playerIndex) {
     std::string command;
 #ifdef _WIN32
     // Windows: Use 'start' to open a new command prompt
-    command = "start cmd /k \"game_player.exe " + std::to_string(playerIndex) + "\"";
+    command = "start cmd /k \"debug\\game_player.exe " + std::to_string(playerIndex) + "\"";
 #elif __APPLE__
     // macOS: Use 'osascript' to run a command in a new Terminal window
     command = "osascript -e 'tell application \"Terminal\" to do script \"cd '$PWD' && ./game_player " + std::to_string(playerIndex) + "\"'";
