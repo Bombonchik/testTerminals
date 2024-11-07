@@ -1,0 +1,9 @@
+[requires]
+sqlitecpp/3.3.2
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[layout]
+cmake_layout

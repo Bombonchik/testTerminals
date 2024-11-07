@@ -2,6 +2,8 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include "SQLiteCpp/SQLiteCpp.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -30,9 +32,33 @@ void detectOSAndLaunchTerminals(int numPlayers) {
     }
 }
 
+void check_db() {
+    try {
+        // Create or open a database file
+        SQLite::Database db("example.db", SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+
+        // Create a new table
+        db.exec("CREATE TABLE IF NOT EXISTS user (id INTEGER PRIMARY KEY, name TEXT);");
+
+        // Insert a row into the table
+        SQLite::Statement insert(db, "INSERT INTO user (name) VALUES (?)");
+        insert.bind(1, "Alice");
+        insert.exec();
+
+        // Query the data
+        SQLite::Statement query(db, "SELECT id, name FROM user");
+        while (query.executeStep()) {
+            std::cout << "User: " << query.getColumn(0) << ", " << query.getColumn(1) << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
+}
+
 int main() {
     int numPlayers = 4; // Example for 4 players
-    detectOSAndLaunchTerminals(numPlayers);
+    check_db();
+    //detectOSAndLaunchTerminals(numPlayers);
     // Main game logic
     return 0;
 }
