@@ -10,7 +10,7 @@
 
 // Constants
 constexpr int SERVER_PORT = 12345;
-constexpr int REFRESH_DELAY_MS = 500; // Refresh console every 500 ms for updates
+constexpr int REFRESH_DELAY_MS = 100; // Refresh console every 500 ms for updates
 
 void clearConsole() {
 #ifdef _WIN32
@@ -97,6 +97,7 @@ int main(int argc, char* argv[]) {
 
         asio::io_context io_context;
         asio::ip::tcp::socket socket(io_context);
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
         // Connect to the server
         socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), SERVER_PORT));

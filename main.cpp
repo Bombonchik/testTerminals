@@ -29,6 +29,9 @@ struct ServerData {
     std::vector<std::shared_ptr<asio::ip::tcp::socket>> clients;
     std::mutex stateMutex;
     std::mutex clientsMutex;
+    std::shared_ptr<asio::io_context> io_context; // Add the io_context here
+
+    ServerData() : io_context(std::make_shared<asio::io_context>()) {} // Initialize io_context
 };
 
 
@@ -37,7 +40,7 @@ void launchTerminal(int playerIndex) {
     std::string command;
 #ifdef _WIN32
     // Windows: Use 'start' to open a new command prompt
-    command = "start cmd /k \"debug\\game_player.exe " + std::to_string(playerIndex) + "\"";
+    command = "start cmd /k \"game_player.exe " + std::to_string(playerIndex) + "\"";
 #elif __APPLE__
     // macOS: Use 'osascript' to run a command in a new Terminal window
     command = "osascript -e 'tell application \"Terminal\" to do script \"cd '$PWD' && ./game_player " + std::to_string(playerIndex) + "\"'";
@@ -189,13 +192,13 @@ void handleClient(std::shared_ptr<asio::ip::tcp::socket> socket, ServerData& ser
 
 // Start the server and propagate the initial game state
 void startServer(ServerData& serverData, int numPlayers) {
-    asio::io_context io_context;
-    asio::ip::tcp::acceptor acceptor(io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), PORT));
+    asio::ip::tcp::acceptor acceptor(*serverData.io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), PORT));
+
 
     spdlog::info("Server started on port {}", PORT);
 
     for (int i = 0; i < numPlayers; ++i) {
-        auto socket = std::make_shared<asio::ip::tcp::socket>(io_context);
+        auto socket = std::make_shared<asio::ip::tcp::socket>(*serverData.io_context);
         acceptor.accept(*socket);
 
         spdlog::info("Player {} connected.", i + 1);
@@ -219,6 +222,10 @@ void startServer(ServerData& serverData, int numPlayers) {
         // Launch a thread to handle the client
         std::thread(handleClient, socket, std::ref(serverData)).detach();
     }
+    // Do not block here, but keep io_context running in a separate thread
+    std::thread([io_context = serverData.io_context] {
+        io_context->run(); // Keep io_context alive for handling async operations
+    }).detach();
 }
 
 
@@ -226,9 +233,8 @@ void startServer(ServerData& serverData, int numPlayers) {
 
 int main() {
     int numPlayers = 4;
-    ServerData serverData = {
-        .gameState = {0, "Welcome to the game!"}
-    };
+    ServerData serverData;
+    serverData.gameState = GameState{0, "Welcome to the game!"};
 
     spdlog::info("Launching {} player terminals...", numPlayers);
     for (int i = 0; i < numPlayers; ++i) {
