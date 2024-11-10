@@ -12,7 +12,8 @@ find_package(cereal REQUIRED)
 
 # Define your executables
 add_executable(launcher main.cpp)
-add_executable(game_player game_player.cpp)
+add_executable(game_player game_player.cpp
+        game_state.hpp)
 
 # Link libraries provided by Conan
 #target_link_libraries(launcher sqlitecpp sqlite3)

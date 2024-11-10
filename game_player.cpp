@@ -1,87 +1,112 @@
 #include <iostream>
-#include <fstream>
-#include <vector>
 #include <string>
-#include <thread>
-#include <chrono>
-#include <mutex>
+#include <asio.hpp>
+#include <sstream>
+#include "game_state.hpp"
+#include "spdlog/spdlog.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
+#include "cereal/archives/binary.hpp"
+#include <cereal/types/string.hpp>
 
-std::mutex gameMutex;
+// Constants
+constexpr int SERVER_PORT = 12345;
+constexpr int REFRESH_DELAY_MS = 500; // Refresh console every 500 ms for updates
 
-struct GameState {
-    int currentPlayer;
-    std::string publicMessage;
-};
+void clearConsole() {
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+#endif
+}
 
-void saveGameState(const GameState& state) {
-    std::lock_guard<std::mutex> lock(gameMutex);
-    std::ofstream file("game_state.txt");
-    if (file.is_open()) {
-        file << state.currentPlayer << "\n";
-        file << state.publicMessage << "\n";
-        file.close();
-    } else {
-        std::cerr << "Unable to open file for writing" << std::endl;
+// Function to configure spdlog for clean output
+void configureLogger() {
+    auto console = spdlog::stdout_color_mt("game_logger");
+    spdlog::set_default_logger(console);
+    spdlog::set_pattern("%v"); // Only display the message (no timestamp, level, etc.)
+}
+
+// Function to receive the game state from the server
+GameState receiveGameState(asio::ip::tcp::socket& socket) {
+    asio::streambuf buf;
+    asio::read_until(socket, buf, '\n');
+    std::istream is(&buf);
+    GameState gameState;
+    cereal::BinaryInputArchive archive(is);
+    archive(gameState);
+    return gameState;
+}
+
+// Function to send the player's input to the server
+void sendPlayerInput(asio::ip::tcp::socket& socket, const GameState& gameState) {
+    std::ostringstream os;
+    {
+        cereal::BinaryOutputArchive archive(os);
+        archive(gameState);
+    }
+    std::string serializedData = os.str() + "\n";
+    asio::write(socket, asio::buffer(serializedData));
+}
+
+// Function to display the game state
+void displayGameState(const GameState& gameState, int playerIndex) {
+    clearConsole(); // Clear the console before displaying updated information
+    spdlog::info("Public Message: {}", gameState.publicMessage);
+    spdlog::info("Player {}, {}", playerIndex + 1,
+                 gameState.currentPlayer == playerIndex ? "it's your turn." : "it's not your turn.");
+    if (gameState.currentPlayer != playerIndex) {
+        spdlog::info("Your private message: Hello from Player {}", playerIndex + 1);
     }
 }
 
-GameState loadGameState() {
-    std::lock_guard<std::mutex> lock(gameMutex);
-    GameState state;
-    std::ifstream file("game_state.txt");
-    if (file.is_open()) {
-        file >> state.currentPlayer;
-        file.ignore(); // Ignore the newline character after the integer
-        std::getline(file, state.publicMessage);
-        file.close();
-    } else {
-        state.currentPlayer = 0;
-        state.publicMessage = "Welcome to the game!";
-    }
-    return state;
-}
-
-void displayGameState(const GameState& state, int playerIndex) {
-    std::system("clear"); // Use "cls" for Windows, "clear" for Unix/Linux
-    std::cout << "Public Message: " << state.publicMessage << std::endl;
-    std::cout << "Player " << playerIndex + 1 << ", it's " << (state.currentPlayer == playerIndex ? "your" : "not your") << " turn." << std::endl;
-    std::cout << "Your private message: Hello from Player " << playerIndex + 1 << std::endl;
-}
-
-void playerTurn(int playerIndex) {
+void playGame(asio::ip::tcp::socket& socket, int playerIndex) {
     while (true) {
-        GameState state = loadGameState();
-        displayGameState(state, playerIndex);
+        try {
+            GameState gameState = receiveGameState(socket); // Get the latest game state
+            displayGameState(gameState, playerIndex); // Display the game state
 
-        if (state.currentPlayer == playerIndex) {
-            std::cout << "Enter a new public message: ";
-            std::string newMessage;
-            std::getline(std::cin, newMessage); // Read the whole line including spaces
+            if (gameState.currentPlayer == playerIndex) {
+                std::string newMessage;
+                spdlog::info("Enter a new public message: ");
+                std::getline(std::cin, newMessage);
 
-            state.publicMessage = newMessage;
-            state.currentPlayer = (state.currentPlayer + 1) % 4; // Assuming 4 players
-            saveGameState(state);
+                gameState.publicMessage = newMessage;
+                gameState.currentPlayer = (gameState.currentPlayer + 1) % 4; // Pass turn to the next player
+                sendPlayerInput(socket, gameState); // Send the updated game state to the server
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(REFRESH_DELAY_MS));
+        } catch (const std::exception& e) {
+            spdlog::error("Connection lost: {}", e.what());
+            break;
         }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Player index not specified!" << std::endl;
+        spdlog::error("Player index not specified!");
         return 1;
     }
 
     int playerIndex = std::stoi(argv[1]);
 
-    // Initialize game state for the first player
-    if (playerIndex == 0) {
-        GameState initialState = {0, "Welcome to the game!"};
-        saveGameState(initialState);
-    }
+    try {
+        configureLogger(); // Configure the logger
 
-    playerTurn(playerIndex);
+        asio::io_context io_context;
+        asio::ip::tcp::socket socket(io_context);
+
+        // Connect to the server
+        socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), SERVER_PORT));
+        spdlog::info("Connected to the server at 127.0.0.1:{}", SERVER_PORT);
+
+        playGame(socket, playerIndex); // Start the game loop
+    } catch (const std::exception& e) {
+        spdlog::error("Error: {}", e.what());
+        return 1;
+    }
 
     return 0;
 }

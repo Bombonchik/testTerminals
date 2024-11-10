@@ -1,5 +1,8 @@
 #include <iostream>
 #include <string>
+#include <vector>
+#include <memory>
+#include <mutex>
 #include <thread>
 #include <chrono>
 #include <sstream>
@@ -8,6 +11,8 @@
 #include "asio.hpp"
 #include "cereal/archives/binary.hpp"
 #include <cereal/types/string.hpp>
+
+#include "game_state.hpp"
 //#include "cereal/cereal.hpp"
 
 #ifdef _WIN32
@@ -16,6 +21,18 @@
 #include <unistd.h>
 #endif
 
+// Server constants
+constexpr int PORT = 12345;
+
+struct ServerData {
+    GameState gameState;
+    std::vector<std::shared_ptr<asio::ip::tcp::socket>> clients;
+    std::mutex stateMutex;
+    std::mutex clientsMutex;
+};
+
+
+// Launch a terminal for each player
 void launchTerminal(int playerIndex) {
     std::string command;
 #ifdef _WIN32
@@ -28,6 +45,7 @@ void launchTerminal(int playerIndex) {
     // Linux: Use 'gnome-terminal' or 'xterm' to open a new terminal window
     command = "gnome-terminal -- bash -c './game_player " + std::to_string(playerIndex) + "; exec bash'";
 #endif
+    spdlog::info("Launching terminal for Player {}", playerIndex + 1);
     system(command.c_str());
 }
 
@@ -37,16 +55,6 @@ void detectOSAndLaunchTerminals(int numPlayers) {
         launchTerminal(i);
     }
 }
-
-struct GameState {
-    int currentPlayer;
-    std::string publicMessage;
-
-    template <class Archive>
-    void serialize(Archive& archive) {
-        archive(currentPlayer, publicMessage);
-    }
-};
 
 void check_db() {
     try {
@@ -135,13 +143,104 @@ void check_cereal() {
     spdlog::info("{} {}", deserializedState.currentPlayer, deserializedState.publicMessage);
 }
 
+// Broadcast the game state to all connected clients
+void broadcastGameState(ServerData& serverData) {
+    std::ostringstream os;
+    {
+        cereal::BinaryOutputArchive archive(os);
+        archive(serverData.gameState);
+    }
+    std::string serializedData = os.str() + "\n";
+
+    std::lock_guard<std::mutex> lock(serverData.clientsMutex);
+    for (const auto& client : serverData.clients) {
+        asio::write(*client, asio::buffer(serializedData));
+    }
+}
+
+// Handle a single client's connection
+void handleClient(std::shared_ptr<asio::ip::tcp::socket> socket, ServerData& serverData) {
+    try {
+        spdlog::info("Client connected: {}", socket->remote_endpoint().address().to_string());
+        while (true) {
+            asio::streambuf buf;
+            asio::read_until(*socket, buf, '\n');
+            std::istream is(&buf);
+            GameState updatedState;
+            {
+                cereal::BinaryInputArchive archive(is);
+                archive(updatedState);
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(serverData.stateMutex);
+                serverData.gameState = updatedState;
+            }
+
+            spdlog::info("Game state updated by Player {}: {}", updatedState.currentPlayer, updatedState.publicMessage);
+            broadcastGameState(serverData);
+        }
+    } catch (const std::exception& e) {
+        spdlog::error("Client disconnected: {}", e.what());
+        std::lock_guard<std::mutex> lock(serverData.clientsMutex);
+        serverData.clients.erase(std::remove(serverData.clients.begin(), serverData.clients.end(), socket), serverData.clients.end());
+    }
+}
+
+// Start the server and propagate the initial game state
+void startServer(ServerData& serverData, int numPlayers) {
+    asio::io_context io_context;
+    asio::ip::tcp::acceptor acceptor(io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), PORT));
+
+    spdlog::info("Server started on port {}", PORT);
+
+    for (int i = 0; i < numPlayers; ++i) {
+        auto socket = std::make_shared<asio::ip::tcp::socket>(io_context);
+        acceptor.accept(*socket);
+
+        spdlog::info("Player {} connected.", i + 1);
+
+        // Add the player to the clients vector
+        {
+            std::lock_guard<std::mutex> lock(serverData.clientsMutex);
+            serverData.clients.push_back(socket);
+        }
+
+        // Propagate the initial game state to the connected client
+        spdlog::info("Sending initial game state to Player {}", i + 1);
+        std::ostringstream os;
+        {
+            cereal::BinaryOutputArchive archive(os);
+            archive(serverData.gameState);
+        }
+        std::string serializedData = os.str() + "\n";
+        asio::write(*socket, asio::buffer(serializedData));
+
+        // Launch a thread to handle the client
+        std::thread(handleClient, socket, std::ref(serverData)).detach();
+    }
+}
+
+
+
+
 int main() {
-    int numPlayers = 4; // Example for 4 players
-    check_db();
-    check_logging();
-    check_asio();
-    check_cereal();
-    //detectOSAndLaunchTerminals(numPlayers);
-    // Main game logic
+    int numPlayers = 4;
+    ServerData serverData = {
+        .gameState = {0, "Welcome to the game!"}
+    };
+
+    spdlog::info("Launching {} player terminals...", numPlayers);
+    for (int i = 0; i < numPlayers; ++i) {
+        launchTerminal(i);
+    }
+
+    spdlog::info("Starting the server...");
+    startServer(serverData, numPlayers);
+
+    // Keep the main thread alive
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
     return 0;
 }
