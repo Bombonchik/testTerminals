@@ -9,13 +9,20 @@ find_package(SQLiteCpp REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(asio REQUIRED)
 find_package(cereal REQUIRED)
+find_package(FTXUI REQUIRED
+        COMPONENTS
+        screen
+        dom
+        component
+)
 
 # Define your executables
-add_executable(launcher main.cpp)
-add_executable(game_player game_player.cpp
-        game_state.hpp)
+add_executable(launcher main.cpp
+        canasta_console.cpp
+        canasta_console.hpp card.cpp card.hpp game_view.cpp game_view.hpp hand.cpp hand.hpp
+        client_deck.hpp client_deck.cpp player_public_info.hpp)
 
 # Link libraries provided by Conan
 #target_link_libraries(launcher sqlitecpp sqlite3)
-target_link_libraries(launcher SQLiteCpp spdlog::spdlog asio::asio cereal::cereal)
-target_link_libraries(game_player SQLiteCpp spdlog::spdlog asio::asio cereal::cereal)
+target_link_libraries(launcher SQLiteCpp spdlog::spdlog asio::asio cereal::cereal ftxui::screen ftxui::dom ftxui::component)
+#target_link_libraries(game_player SQLiteCpp spdlog::spdlog asio::asio cereal::cereal)

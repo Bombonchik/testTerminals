@@ -7,12 +7,15 @@
 #include <chrono>
 #include <sstream>
 #include "SQLiteCpp/SQLiteCpp.h"
-#include "spdlog/spdlog.h"
+#include <spdlog/spdlog.h>
 #include "asio.hpp"
 #include "cereal/archives/binary.hpp"
 #include <cereal/types/string.hpp>
-
-#include "game_state.hpp"
+#include "canasta_console.hpp"
+#include "card.hpp"
+#include "game_view.hpp"
+#include "hand.hpp"
+#include <random>
 //#include "cereal/cereal.hpp"
 
 #ifdef _WIN32
@@ -20,19 +23,6 @@
 #else
 #include <unistd.h>
 #endif
-
-// Server constants
-constexpr int PORT = 12345;
-
-struct ServerData {
-    GameState gameState;
-    std::vector<std::shared_ptr<asio::ip::tcp::socket>> clients;
-    std::mutex stateMutex;
-    std::mutex clientsMutex;
-    std::shared_ptr<asio::io_context> io_context; // Add the io_context here
-
-    ServerData() : io_context(std::make_shared<asio::io_context>()) {} // Initialize io_context
-};
 
 
 // Launch a terminal for each player
@@ -48,205 +38,206 @@ void launchTerminal(int playerIndex) {
     // Linux: Use 'gnome-terminal' or 'xterm' to open a new terminal window
     command = "gnome-terminal -- bash -c './game_player " + std::to_string(playerIndex) + "; exec bash'";
 #endif
-    spdlog::info("Launching terminal for Player {}", playerIndex + 1);
     system(command.c_str());
 }
 
-void detectOSAndLaunchTerminals(int numPlayers) {
-    for (int i = 0; i < numPlayers; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Add delay to ensure terminals launch correctly
-        launchTerminal(i);
-    }
+bool randomBool() {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::bernoulli_distribution dist(1.0/3.0);          // p = 1/3 for true
+
+    // 2) Generate
+    return dist(gen);
 }
 
-void check_db() {
-    try {
-        // Create or open a database file
-        SQLite::Database db("example.db", SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+void testCanastaConsole() {
+    CanastaConsole ui;
+    ui.clear();
+    for (int i = 0; i < 20; ++i) {
+        ui.print("Testing CanastaConsole: " + std::to_string(i), CanastaConsole::Color::BrightCyan);
+    }
+    ui.clear();
 
-        // Create a new table
-        db.exec("CREATE TABLE IF NOT EXISTS user (id INTEGER PRIMARY KEY, name TEXT);");
+    ui.print("CanastaConsole Test Harness", CanastaConsole::Color::BrightMagenta);
+    ui.print("--------------------------------", CanastaConsole::Color::BrightWhite);
 
-        // Insert a row into the table
-        SQLite::Statement insert(db, "INSERT INTO user (name) VALUES (?)");
-        insert.bind(1, "Alice");
-        insert.exec();
+    // Demonstrate colors
+    ui.print("Default color text");
+    ui.print("Red message", CanastaConsole::Color::Red);
+    ui.print("Green message", CanastaConsole::Color::Green);
+    ui.print("Yellow message", CanastaConsole::Color::Yellow);
+    ui.print("Blue message", CanastaConsole::Color::Blue);
+    ui.print("Magenta message", CanastaConsole::Color::Magenta);
+    ui.print("Cyan message", CanastaConsole::Color::Cyan);
+    ui.print("White message", CanastaConsole::Color::White);
 
-        // Query the data
-        SQLite::Statement query(db, "SELECT id, name FROM user");
-        while (query.executeStep()) {
-            std::cout << "User: " << query.getColumn(0) << ", " << query.getColumn(1) << std::endl;
+    ui.print("BrightRed message", CanastaConsole::Color::BrightRed);
+    ui.print("BrightGreen message", CanastaConsole::Color::BrightGreen);
+    ui.print("BrightYellow message", CanastaConsole::Color::BrightYellow);
+    ui.print("BrightBlue message", CanastaConsole::Color::BrightBlue);
+    ui.print("BrightMagenta message", CanastaConsole::Color::BrightMagenta);
+    ui.print("BrightCyan message", CanastaConsole::Color::BrightCyan);
+    ui.print("BrightWhite message", CanastaConsole::Color::BrightWhite);
+
+    // Demonstrate UTF-8
+    ui.print("UTF-8 symbols: ✔ ✓ → ← ▲ ▼ ★ ☆ ☯ ☢", CanastaConsole::Color::BrightCyan);
+    ui.print("Unicode emojis: 😀 🎉 🚀 🃏", CanastaConsole::Color::Yellow);
+    ui.print("CJK characters: 漢字 仮名 가나다", CanastaConsole::Color::Green);
+
+    // Demonstrate printing without newline
+    ui.print("Loading: [", CanastaConsole::Color::BrightBlue, false);
+    for (int i = 0; i <= 10; ++i) {
+        ui.print(std::to_string(i * 10) + "%", CanastaConsole::Color::BrightGreen, false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        ui.print("Loading: [" + std::to_string((i+1)*10) + "%] ", CanastaConsole::Color::BrightBlue, false);
+    }
+    ui.print("] Done!", CanastaConsole::Color::BrightGreen);
+
+    // Pause before exit
+    ui.print("Press Enter to exit...", CanastaConsole::Color::BrightWhite, false);
+
+}
+
+void testPrintCard(GameView& gameView, CanastaConsole& console) {
+    Card card;
+    for (size_t i = 1; i < 15; ++i) {
+        card = Card(static_cast<Rank>(i), CardColor::RED);
+        gameView.printCard(card);
+        card = Card(static_cast<Rank>(i), CardColor::BLACK);
+        gameView.printCard(card);
+    }
+    console.printNewLine();
+}
+
+Hand getTestHand() {
+    Hand hand;
+    for (size_t i = 1; i < 15; ++i) {
+        if (randomBool())
+            hand.addCard(Card(static_cast<Rank>(i), CardColor::RED));
+        if (randomBool())
+            hand.addCard(Card(static_cast<Rank>(i), CardColor::RED));
+        if (randomBool())
+            hand.addCard(Card(static_cast<Rank>(i), CardColor::BLACK));
+        if (randomBool())
+            hand.addCard(Card(static_cast<Rank>(i), CardColor::BLACK));
+    }
+    return hand;
+}
+
+void testPrintHand(GameView& gameView) {
+    gameView.printHand(getTestHand());
+}
+
+std::vector<MeldView> getTestMelds() {
+    std::vector<MeldView> melds;
+    for (size_t i = 4; i < 15; ++i) {
+        MeldView meld;
+        meld.rank = static_cast<Rank>(i);
+        if (randomBool() && randomBool() && randomBool())
+            meld.cards.push_back(Card(Rank::Joker, CardColor::RED));
+        if (randomBool() && randomBool() && randomBool())
+            meld.cards.push_back(Card(Rank::Joker, CardColor::BLACK));
+        if (randomBool() && randomBool())
+            meld.cards.push_back(Card(Rank::Two, CardColor::RED));
+        if (randomBool() && randomBool())
+            meld.cards.push_back(Card(Rank::Two, CardColor::BLACK));
+        if (randomBool())
+            meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::RED));
+        if (randomBool())
+            meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::RED));
+        if (randomBool())
+            meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::RED));
+        if (randomBool())
+            meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::RED));
+        // if (randomBool())
+        //     meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::RED));
+        // if (randomBool())
+        //     meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::BLACK));
+        if (randomBool())
+            meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::BLACK));
+        if (randomBool())
+            meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::BLACK));
+        if (randomBool())
+            meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::BLACK));
+        if (randomBool())
+            meld.cards.push_back(Card(static_cast<Rank>(i), CardColor::BLACK));
+        if (meld.cards.size() >= 3) 
+            melds.push_back(meld);
+    }
+    return melds;
+}
+
+void testPrintMeld(GameView& gameView, CanastaConsole& console) {
+    std::vector<MeldView> melds = getTestMelds();
+    console.printNewLine();
+    for (auto& meld : melds) {
+        for (auto& card : meld.cards) {
+            gameView.printCard(card);
+            console.printSpace();
         }
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        console.printNewLine();
     }
+    gameView.printMeld(melds);
+    gameView.ftxuiPrintMeld(melds);
 }
 
-void check_logging() {
-    spdlog::info("Welcome to spdlog!");
-    spdlog::error("Some error message with arg: {}", 1);
+/*void testPromts(GameView& gameView, CanastaConsole& console) {
+    std::string question = "What is your name?";
+    std::string placeholder = "Enter your name";
+    std::string answer = gameView.promptString(question, placeholder);
 
-    spdlog::warn("Easy padding in numbers like {:08d}", 12);
-    spdlog::critical("Support for int: {0:d};  hex: {0:x};  oct: {0:o}; bin: {0:b}", 42);
-    spdlog::info("Support for floats {:03.2f}", 1.23456);
-    spdlog::info("Positional args are {1} {0}..", "too", "supported");
-    spdlog::info("{:<30}", "left aligned");
+    std::vector<std::string> options = {"Option 1", "Option 2", "Option 3"};
+    int choice = gameView.promptChoice("Choose an option:", options);
+    if (answer[answer.size() - 1] == '\n') {
+        console.print("yes", CanastaConsole::Color::BrightCyan);
+    }
+    console.print("Your answer: " + answer, CanastaConsole::Color::BrightCyan, true);
+    console.print("You chose: " + options[choice], CanastaConsole::Color::BrightCyan, true);
+}*/
 
-    spdlog::set_level(spdlog::level::debug); // Set global log level to debug
-    spdlog::debug("This message should be displayed..");
-
-    // change log pattern
-    spdlog::set_pattern("[%H:%M:%S %z] [%n] [%^---%L---%$] [thread %t] %v");
-
-    // Compile time log levels
-    // Note that this does not change the current log level, it will only
-    // remove (depending on SPDLOG_ACTIVE_LEVEL) the call on the release code.
-    SPDLOG_TRACE("Some trace message with param {}", 42);
-    SPDLOG_DEBUG("Some debug message");
+BoardState getTestBoardState() {
+    BoardState boardState;
+    boardState.myTeamMelds = getTestMelds();
+    boardState.opponentTeamMelds = getTestMelds();
+    boardState.myHand = getTestHand();
+    boardState.deckState = ClientDeck(20, Card(Rank::Five, CardColor::RED), 5, false);
+    boardState.myPlayer = PlayerPublicInfo{"Main Man", 13, false};
+    boardState.oppositePlayer = PlayerPublicInfo{"Front Man", 9, true};
+    boardState.leftPlayer = PlayerPublicInfo{"Left Man", 14, false};
+    boardState.rightPlayer = PlayerPublicInfo{"Right Man", 7, false};
+    boardState.myTeamTotalScore = 590;
+    boardState.opponentTeamTotalScore = 375;
+    boardState.myTeamMeldPoints = 70;
+    boardState.opponentTeamMeldPoints = 110;
+    return boardState;
 }
 
-// Simple function to test Asio functionality
-void check_asio() {
-    try {
-        asio::io_context io_context;
+void testPromptChoiceWithBoard(GameView& gameView, CanastaConsole& console) {
+    // std::string question = "What is your name?";
+    // std::string placeholder = "Enter your name";
+    // std::string answer = gameView.promptStringWithBoard(question, placeholder, BoardState());
 
-        // Create a timer that expires in 1 second
-        asio::steady_timer timer(io_context, std::chrono::seconds(1));
-        timer.async_wait([](const asio::error_code& error) {
-            if (!error) {
-                std::cout << "Asio works! Timer expired after 1 second." << std::endl;
-            } else {
-                std::cerr << "Timer error: " << error.message() << std::endl;
-            }
-        });
+    std::vector<std::string> options = {"Option 1", "Option 2", "Option 3"};
+    int choice = gameView.promptChoiceWithBoard("Choose an option:", options, getTestBoardState());
 
-        // Run the io_context to process the timer
-        io_context.run();
-    } catch (const std::exception& e) {
-        std::cerr << "Asio error: " << e.what() << std::endl;
-    }
+    //console.print("Your answer: " + answer, CanastaConsole::Color::BrightCyan, true);
+    console.print("You chose: " + options[choice], CanastaConsole::Color::BrightCyan, true);
 }
-
-void check_cereal() {
-    // Serialization
-    std::ostringstream os;
-    {
-        cereal::BinaryOutputArchive archive(os);
-        archive(GameState{1, "Hello!"});
-    }
-    std::string serializedData = os.str();
-
-    // Deserialization
-    std::istringstream is(serializedData);
-    GameState deserializedState;
-    {
-        cereal::BinaryInputArchive archive(is);
-        archive(deserializedState);
-    }
-    spdlog::info("{} {}", deserializedState.currentPlayer, deserializedState.publicMessage);
-}
-
-// Broadcast the game state to all connected clients
-void broadcastGameState(ServerData& serverData) {
-    std::ostringstream os;
-    {
-        cereal::BinaryOutputArchive archive(os);
-        archive(serverData.gameState);
-    }
-    std::string serializedData = os.str() + "\n";
-
-    std::lock_guard<std::mutex> lock(serverData.clientsMutex);
-    for (const auto& client : serverData.clients) {
-        asio::write(*client, asio::buffer(serializedData));
-    }
-}
-
-// Handle a single client's connection
-void handleClient(std::shared_ptr<asio::ip::tcp::socket> socket, ServerData& serverData) {
-    try {
-        spdlog::info("Client connected: {}", socket->remote_endpoint().address().to_string());
-        while (true) {
-            asio::streambuf buf;
-            asio::read_until(*socket, buf, '\n');
-            std::istream is(&buf);
-            GameState updatedState;
-            {
-                cereal::BinaryInputArchive archive(is);
-                archive(updatedState);
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(serverData.stateMutex);
-                serverData.gameState = updatedState;
-            }
-
-            spdlog::info("Game state updated by Player {}: {}", updatedState.currentPlayer, updatedState.publicMessage);
-            broadcastGameState(serverData);
-        }
-    } catch (const std::exception& e) {
-        spdlog::error("Client disconnected: {}", e.what());
-        std::lock_guard<std::mutex> lock(serverData.clientsMutex);
-        serverData.clients.erase(std::remove(serverData.clients.begin(), serverData.clients.end(), socket), serverData.clients.end());
-    }
-}
-
-// Start the server and propagate the initial game state
-void startServer(ServerData& serverData, int numPlayers) {
-    asio::ip::tcp::acceptor acceptor(*serverData.io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), PORT));
-
-
-    spdlog::info("Server started on port {}", PORT);
-
-    for (int i = 0; i < numPlayers; ++i) {
-        auto socket = std::make_shared<asio::ip::tcp::socket>(*serverData.io_context);
-        acceptor.accept(*socket);
-
-        spdlog::info("Player {} connected.", i + 1);
-
-        // Add the player to the clients vector
-        {
-            std::lock_guard<std::mutex> lock(serverData.clientsMutex);
-            serverData.clients.push_back(socket);
-        }
-
-        // Propagate the initial game state to the connected client
-        spdlog::info("Sending initial game state to Player {}", i + 1);
-        std::ostringstream os;
-        {
-            cereal::BinaryOutputArchive archive(os);
-            archive(serverData.gameState);
-        }
-        std::string serializedData = os.str() + "\n";
-        asio::write(*socket, asio::buffer(serializedData));
-
-        // Launch a thread to handle the client
-        std::thread(handleClient, socket, std::ref(serverData)).detach();
-    }
-    // Do not block here, but keep io_context running in a separate thread
-    std::thread([io_context = serverData.io_context] {
-        io_context->run(); // Keep io_context alive for handling async operations
-    }).detach();
-}
-
-
-
 
 int main() {
     int numPlayers = 4;
-    ServerData serverData;
-    serverData.gameState = GameState{0, "Welcome to the game!"};
+    GameView gameView;
+    CanastaConsole console;
 
-    spdlog::info("Launching {} player terminals...", numPlayers);
-    for (int i = 0; i < numPlayers; ++i) {
-        launchTerminal(i);
-    }
+    //testCanastaConsole();
+    //testPrintCard(gameView);
+    //testPrintHand(gameView);
+    //testPrintMeld(gameView, console);
+    testPromptChoiceWithBoard(gameView, console);
+    // for (int i = 0; i < numPlayers; ++i) {
+    //     launchTerminal(i);
+    // }
 
-    spdlog::info("Starting the server...");
-    startServer(serverData, numPlayers);
 
-    // Keep the main thread alive
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
     return 0;
 }
