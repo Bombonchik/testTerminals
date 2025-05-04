@@ -2,3 +2,4 @@
 /game_player
 /cmake-build-debug/
 /build/
+conan_provider.cmake

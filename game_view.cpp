@@ -3,9 +3,9 @@
 
 GameView::GameView(): console(), screen(ScreenInteractive::TerminalOutput()) {
     // Initialize the console UI
-    //console.clear();
-    console.print("Welcome to Canasta!", CanastaConsole::Color::BrightCyan, true);
-    console.print("Initializing game view...", CanastaConsole::Color::BrightWhite, true);
+    console.clear();
+    //console.print("Welcome to Canasta!", CanastaConsole::Color::BrightCyan, true);
+    //console.print("Initializing game view...", CanastaConsole::Color::BrightWhite, true);
 }
 
 void GameView::printCard(const Card& card) {
@@ -14,10 +14,7 @@ void GameView::printCard(const Card& card) {
     std::string cartToPrint = "";
     auto rank = card.getRank();
     if (rank == Rank::Joker) {
-        //cartToPrint = "☻";
         cartToPrint = "@";
-    //} else if (rank >= Rank::Two && rank <= Rank::Ten) {
-    //    cartToPrint = std::to_string(static_cast<int>(rank));
     } else if (rank >= Rank::Two && rank <= Rank::Nine) {
         cartToPrint = std::to_string(static_cast<int>(rank));
     } else if (rank == Rank::Ten) {
@@ -165,9 +162,13 @@ void GameView::ftxuiPrintMeld(const std::vector<MeldView>& melds) {
     //console.clear();
 }
 
-Element GameView::makeMeldGrid(const std::vector<MeldView>& melds) {
+Element GameView::makeMeldGrid(const std::vector<MeldView>& melds, Color frameColor) {
     std::vector<Element> rows;
     constexpr size_t maxRows = 8;
+
+    if (melds.empty()) {
+        return text(" ") | color(frameColor);
+    }
 
     for (size_t row = 0; row < maxRows; ++row) {
         std::vector<Element> cells;
@@ -175,11 +176,11 @@ Element GameView::makeMeldGrid(const std::vector<MeldView>& melds) {
         for (auto& meld : melds) {
             // not first meld
             if (meld.rank != melds.front().rank)
-                cells.push_back(text("|"));
+                cells.push_back(separator() | color(frameColor));
 
             // 1) true canasta indicator: if they have ≥7 cards, on the 8th row show 'C'
             if (meld.cards.size() >= 7 && row == 7) {
-                cells.push_back(text(" C ") | color(Color::Grey0) | flex_grow);
+                cells.push_back(text(" C ") | color(frameColor) | flex_grow);
                 continue;
             }
 
@@ -187,14 +188,14 @@ Element GameView::makeMeldGrid(const std::vector<MeldView>& melds) {
             if (row < meld.cards.size()) {
                 // a) small meld <7 cards ⇒ show the card at index = row
                 if (meld.cards.size() < 7) {
-                    cells.push_back(makeCardElement(meld.cards[row]));
+                    cells.push_back(makeCardElement(meld.cards[row], true));
 
                 } else {
                     if (row == 0) {
-                        cells.push_back(makeCardElement(meld.cards.front()));
+                        cells.push_back(makeCardElement(meld.cards.front(), true));
                     } else if (row == 1 &&
                             meld.cards.front().getRank() != meld.cards.back().getRank()) {
-                        cells.push_back(makeCardElement(meld.cards.back()));
+                        cells.push_back(makeCardElement(meld.cards.back(), true));
                     } else {
                         cells.push_back(text("   ") | flex_grow);
                     }
@@ -209,16 +210,62 @@ Element GameView::makeMeldGrid(const std::vector<MeldView>& melds) {
     }
 
     // wrap it in a box exactly like before
-    return vbox(std::move(rows)) | border;
+    return vbox(std::move(rows)) | border | color(frameColor);
 }
 
-// Demo
-Element GameView::makeHandRow(const Hand& hand) {
-    std::vector<Element> cards;
-    for (auto& c : hand.getCards())
-        cards.push_back(makeCardElement(c));
-    return hbox(std::move(cards)) | border;
+Element GameView::makeHandGrid(const Hand& hand) {
+    auto cards = hand.getCards();
+    if (cards.empty())
+        return text("Hand is empty");
+    std::vector<std::vector<Card>> cardLayout;
+    std::vector<Card> cardColumn;
+    for (auto& card : cards) {
+        if (cardColumn.empty()) {
+            cardColumn.push_back(card);
+        }
+        else if (card.getRank() == cardColumn.back().getRank()) {
+            cardColumn.push_back(card);
+        } else {
+            cardLayout.push_back(cardColumn);
+            cardColumn.clear();
+            cardColumn.push_back(card);
+        }
+    }
+
+    size_t maxSize = 0;
+    for (auto& column : cardLayout)
+        maxSize = std::max(maxSize, column.size());
+
+    std::vector<Element> columns;
+    std::vector<Element> cells;
+    for (auto& column : cardLayout) {
+        for (size_t i = 0; i < maxSize; ++i) {
+            if (i < column.size()) {
+                cells.push_back(makeCardElement(column[i]));
+            } else {
+                cells.push_back(text("   ") | flex_grow);
+            }
+        }
+        columns.push_back(vbox(std::move(cells)));
+        std::vector<Element> delimeterColumn;
+        for (size_t i = 0; i < maxSize; ++i)
+            delimeterColumn.push_back(text("|"));
+        //columns.push_back(vbox(std::move(delimeterColumn)));
+        columns.push_back(separator());
+    }
+    columns.pop_back(); // remove the last delimeter
+    auto cardsElement = hbox(std::move(columns)) | border;
+    
+    /*for (size_t i = 1; i <= maxSize; ++i)
+        cells.push_back(text(std::to_string(i)) | color(Color::Cyan));
+    auto indexElement = vbox(std::move(cells));
+    cardsElement = hbox({
+        indexElement | center,
+        cardsElement,
+    }) | center;*/
+    return cardsElement;
 }
+
 
 // Demo
 Element GameView::makeDeckInfo(const ClientDeck& deck) {
@@ -323,9 +370,9 @@ int GameView::promptChoiceWithBoard(const std::string& question,
             text(question),
             menu->Render() | frame,
             okButton->Render() | center
-        }) | border
+        })
         | size(HEIGHT, EQUAL, 6);
-    auto root = vbox({ board, promptBox });
+    auto root = vbox({ board, separator(), promptBox });
     Component component = Renderer([&] { return root; });
     screen.Loop(component);
 
@@ -334,14 +381,18 @@ int GameView::promptChoiceWithBoard(const std::string& question,
 }
 
 Element GameView::makeBoard(const BoardState& boardState) {
-    auto myMeldGrid = makeMeldGrid(boardState.myTeamMelds);
-    auto opponentMeldGrid = makeMeldGrid(boardState.opponentTeamMelds);
-    auto myHandRow = makeHandRow(boardState.myHand);
+    const auto myColor = Color::LightSlateBlue;
+    const auto oppColor = Color::LightGreenBis; 
+    auto myMeldGrid = makeMeldGrid(boardState.myTeamMelds, myColor);
+    auto opponentMeldGrid = makeMeldGrid(boardState.opponentTeamMelds, oppColor);
+    auto myHandRow = makeHandGrid(boardState.myHand);
     auto deckInfo = makeDeckInfo(boardState.deckState);
     auto scoreInfo = makeScoreInfo(boardState.myTeamTotalScore,
         boardState.opponentTeamTotalScore,
         boardState.myTeamMeldPoints,
-        boardState.opponentTeamMeldPoints);
+        boardState.opponentTeamMeldPoints,
+        myColor, oppColor
+    );
     auto myPlayerInfo = makePlayerInfo(boardState.myPlayer);
     auto opponentPlayerInfo = makePlayerInfo(boardState.oppositePlayer);
     auto leftPlayerInfo = boardState.leftPlayer.has_value() ?
@@ -374,21 +425,19 @@ Element GameView::makeBoard(const BoardState& boardState) {
 }
 
 Element GameView::makeScoreInfo(int myTeamTotalScore, int opponentTeamTotalScore,
-    int myTeamMeldPoints, int opponentTeamMeldPoints) {
+    int myTeamMeldPoints, int opponentTeamMeldPoints, Color textColor1, Color textColor2) {
     return vbox({
         hbox({
-            text("My Team: ") | bold,
-            text(std::to_string(myTeamTotalScore)) | bold,
-            text(" (Meld: ") | bold,
-            text(std::to_string(myTeamMeldPoints)) | bold,
-            text(")"),
+            text("Total Score: ") | bold,
+            text(std::to_string(myTeamTotalScore)) | bold | color(textColor1),
+            text(" vs ") | bold,
+            text(std::to_string(opponentTeamTotalScore)) | bold | color(textColor2),
         }),
         hbox({
-            text("Opponent Team: ") | bold,
-            text(std::to_string(opponentTeamTotalScore)) | bold,
-            text(" (Meld: ") | bold,
-            text(std::to_string(opponentTeamMeldPoints)) | bold,
-            text(")"),
+            text("Meld Points: ") | bold,
+            text(std::to_string(myTeamMeldPoints)) | bold | color(textColor1),
+            text(" vs ") | bold,
+            text(std::to_string(opponentTeamMeldPoints)) | bold | color(textColor2),
         }),
     });
 }

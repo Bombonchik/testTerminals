@@ -61,11 +61,11 @@ private:
 
     Element makeCardElement(const Card& card, bool padded = true);
     Element makeBoard(const BoardState& boardState);
-    Element makeHandRow(const Hand& hand);
+    Element makeHandGrid(const Hand& hand);
     Element makeDeckInfo(const ClientDeck& deck);
     Element makeScoreInfo(int myTeamTotalScore, int opponentTeamTotalScore,
-        int myTeamMeldPoints, int opponentTeamMeldPoints);
-    Element makeMeldGrid(const std::vector<MeldView>& melds);
+        int myTeamMeldPoints, int opponentTeamMeldPoints, Color textColor1, Color textColor2);
+    Element makeMeldGrid(const std::vector<MeldView>& melds, Color frameColor);
     Element makePlayerInfo(const PlayerPublicInfo& player);
 };
 
