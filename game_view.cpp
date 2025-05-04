@@ -232,9 +232,12 @@ Element GameView::makeHandGrid(const Hand& hand) {
         }
     }
 
-    size_t maxSize = 0;
-    for (auto& column : cardLayout)
-        maxSize = std::max(maxSize, column.size());
+    std::size_t maxSize = 0;
+    for (auto& column : cardLayout) {
+        if (column.size() > maxSize) {
+            maxSize = column.size();
+        }
+    }
 
     std::vector<Element> columns;
     std::vector<Element> cells;
