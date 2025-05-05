@@ -97,9 +97,9 @@ void GameView::printMeld(const std::vector<MeldView>& melds) {
 void GameView::ftxuiPrintMeld(const std::vector<MeldView>& melds) {
 
     std::vector<Element> rows;
-    constexpr size_t maxRows = 8;
+    constexpr std::size_t maxRows = 8;
 
-    for (size_t row = 0; row < maxRows; ++row) {
+    for (std::size_t row = 0; row < maxRows; ++row) {
         std::vector<Element> cells;
 
         for (auto& meld : melds) {
@@ -163,13 +163,13 @@ void GameView::ftxuiPrintMeld(const std::vector<MeldView>& melds) {
 
 Element GameView::makeMeldGrid(const std::vector<MeldView>& melds, Color frameColor) {
     std::vector<Element> rows;
-    constexpr size_t maxRows = 8;
+    constexpr std::size_t maxRows = 8;
 
     if (melds.empty()) {
         return text(" ") | color(frameColor);
     }
 
-    for (size_t row = 0; row < maxRows; ++row) {
+    for (std::size_t row = 0; row < maxRows; ++row) {
         std::vector<Element> cells;
 
         for (auto& meld : melds) {
@@ -242,7 +242,7 @@ Element GameView::makeHandGrid(const Hand& hand) {
     std::vector<Element> columns;
     std::vector<Element> cells;
     for (auto& column : cardLayout) {
-        for (size_t i = 0; i < maxSize; ++i) {
+        for (std::size_t i = 0; i < maxSize; ++i) {
             if (i < column.size()) {
                 cells.push_back(makeCardElement(column[i]));
             } else {
@@ -251,7 +251,7 @@ Element GameView::makeHandGrid(const Hand& hand) {
         }
         columns.push_back(vbox(std::move(cells)));
         std::vector<Element> delimeterColumn;
-        for (size_t i = 0; i < maxSize; ++i)
+        for (std::size_t i = 0; i < maxSize; ++i)
             delimeterColumn.push_back(text("|"));
         //columns.push_back(vbox(std::move(delimeterColumn)));
         columns.push_back(separator());
@@ -259,7 +259,7 @@ Element GameView::makeHandGrid(const Hand& hand) {
     columns.pop_back(); // remove the last delimeter
     auto cardsElement = hbox(std::move(columns)) | border;
     
-    /*for (size_t i = 1; i <= maxSize; ++i)
+    /*for (std::size_t i = 1; i <= maxSize; ++i)
         cells.push_back(text(std::to_string(i)) | color(Color::Cyan));
     auto indexElement = vbox(std::move(cells));
     cardsElement = hbox({
@@ -426,8 +426,8 @@ int GameView::promptChoiceWithBoard(
 
             // Visible window
             int vis = paneH - (message ? 2 : 1);
-            scroll = std::min(scroll, (int)options.size() - vis);
-            scroll = std::max(scroll, 0);
+            scroll = std::min<int>(scroll, (int)options.size() - vis);
+            scroll = std::max<int>(scroll, 0);
 
             // Draw options with arrow
             for (int i = 0; i < vis; ++i) {
@@ -560,8 +560,8 @@ std::vector<MeldRequest> GameView::runMeldWizard(const BoardState& boardState) {
         Rank::Seven, Rank::Eight, Rank::Nine, Rank::Ten,
         Rank::Jack,  Rank::Queen, Rank::King, Rank::Ace
     };
-    size_t rankIdx = 0, rankScroll = 0;
-    size_t cardIdx = 0, cardScroll = 0;
+    std::size_t rankIdx = 0, rankScroll = 0;
+    std::size_t cardIdx = 0, cardScroll = 0;
     std::optional<Rank> currentRank;
     std::vector<bool> cardSelected;
     const int paneH = 6;
@@ -593,14 +593,14 @@ std::vector<MeldRequest> GameView::runMeldWizard(const BoardState& boardState) {
         // b) wizard pane
         std::vector<Element> lines;
         if (mode == Mode::PICK_RANK) {
-            size_t n   = ALL_RANKS.size();
-            size_t vis = paneH - 2;
-            rankIdx    = std::min(rankIdx, n? n-1:0);
-            rankScroll = std::min(rankScroll, n>vis? n-vis:0);
+            std::size_t n   = ALL_RANKS.size();
+            std::size_t vis = paneH - 2;
+            rankIdx    = std::min<std::size_t>(rankIdx, n? n-1:0);
+            rankScroll = std::min<std::size_t>(rankScroll, n>vis? n-vis:0);
 
             lines.push_back(text("Select rank:"));
-            for (size_t i = 0; i < vis; ++i) {
-                size_t idx = i + rankScroll;
+            for (std::size_t i = 0; i < vis; ++i) {
+                std::size_t idx = i + rankScroll;
                 if (idx >= n) break;
                     std::string pre = (idx==rankIdx?"→ ":"  ");
                 lines.push_back(text(pre + label_for_rank(ALL_RANKS[idx])));
@@ -610,18 +610,18 @@ std::vector<MeldRequest> GameView::runMeldWizard(const BoardState& boardState) {
         // PICK_CARDS
         Rank r        = *currentRank;
         auto bucket   = bucket_for(r);
-        size_t n      = bucket.size();
-        size_t vis    = paneH - 2;
+        std::size_t n      = bucket.size();
+        std::size_t vis    = paneH - 2;
         if (cardSelected.size()!=n)
             cardSelected.assign(n,false);
-        cardIdx    = std::min(cardIdx, n?n-1:0);
-        cardScroll = std::min(cardScroll, n>vis? n-vis:0);
+        cardIdx    = std::min<std::size_t>(cardIdx, n?n-1:0);
+        cardScroll = std::min<std::size_t>(cardScroll, n>vis? n-vis:0);
 
         Card dummy{r, CardColor::BLACK};
         lines.push_back(text("Pick cards for `"
                         + getCardView(dummy).label +"`:"));
-        for (size_t i = 0; i < vis; ++i) {
-            size_t idx = i + cardScroll;
+        for (std::size_t i = 0; i < vis; ++i) {
+            std::size_t idx = i + cardScroll;
             if (idx >= n) break;
             std::string prefix = (idx==cardIdx ? "→ " : "  ");
             std::string mark   = cardSelected[idx] ? "[x] " : "[ ] ";
@@ -642,8 +642,8 @@ std::vector<MeldRequest> GameView::runMeldWizard(const BoardState& boardState) {
     }),
     [&](Event e){
         if (mode==Mode::PICK_RANK) {
-            size_t n   = ALL_RANKS.size();
-            size_t vis = paneH - 2;
+            std::size_t n   = ALL_RANKS.size();
+            std::size_t vis = paneH - 2;
             if (e==Event::ArrowDown) {
                 if (rankIdx+1 < n) {
                 rankIdx++;
@@ -674,8 +674,8 @@ std::vector<MeldRequest> GameView::runMeldWizard(const BoardState& boardState) {
         } else {
         // PICK_CARDS
             auto bucket = bucket_for(*currentRank);
-            size_t n   = bucket.size();
-            size_t vis = paneH - 2;
+            std::size_t n   = bucket.size();
+            std::size_t vis = paneH - 2;
             if (e==Event::ArrowDown) {
                 if (cardIdx+1 < n) {
                     cardIdx++;
@@ -699,7 +699,7 @@ std::vector<MeldRequest> GameView::runMeldWizard(const BoardState& boardState) {
             if (e==Event::Return) {
                 // gather picked
                 std::vector<Card> picked;
-                for (size_t i=0; i<bucket.size(); ++i)
+                for (std::size_t i=0; i<bucket.size(); ++i)
                     if (cardSelected[i])
                         picked.push_back(bucket[i]);
                 if (!picked.empty()) {
@@ -752,8 +752,8 @@ Card GameView::runDiscardWizard(const BoardState& boardState) {
     // State
     enum class Mode { PICK_RANK, PICK_CARD };
     Mode mode = Mode::PICK_RANK;
-    size_t rankIdx = 0, rankScroll = 0;
-    size_t cardIdx = 0, cardScroll = 0;
+    std::size_t rankIdx = 0, rankScroll = 0;
+    std::size_t cardIdx = 0, cardScroll = 0;
     std::optional<Rank> currentRank;
     std::optional<Card> result;  // the selected card
   
@@ -785,14 +785,14 @@ Card GameView::runDiscardWizard(const BoardState& boardState) {
   
         if (mode == Mode::PICK_RANK) {
           // Rank list
-          size_t n   = ranks.size();
-          size_t vis = paneH - 2;
-          rankIdx    = std::min(rankIdx, n ? n - 1 : 0);
-          rankScroll = std::min(rankScroll, n > vis ? n - vis : 0);
+          std::size_t n   = ranks.size();
+          std::size_t vis = paneH - 2;
+          rankIdx    = std::min<std::size_t>(rankIdx, n ? n - 1 : 0);
+          rankScroll = std::min<std::size_t>(rankScroll, n > vis ? n - vis : 0);
   
           lines.push_back(text("Select rank to discard:"));
-          for (size_t i = 0; i < vis; ++i) {
-            size_t idx = i + rankScroll;
+          for (std::size_t i = 0; i < vis; ++i) {
+            std::size_t idx = i + rankScroll;
             if (idx >= n) break;
             std::string pre = (idx == rankIdx ? "→ " : "  ");
             lines.push_back(text(pre + label_for_rank(ranks[idx])));
@@ -802,17 +802,17 @@ Card GameView::runDiscardWizard(const BoardState& boardState) {
           // Card list
           Rank r        = *currentRank;
           auto bucket   = bucket_for(r);
-          size_t n      = bucket.size();
-          size_t vis    = paneH - 2;
-          cardIdx       = std::min(cardIdx, n ? n - 1 : 0);
-          cardScroll    = std::min(cardScroll, n > vis ? n - vis : 0);
+          std::size_t n      = bucket.size();
+          std::size_t vis    = paneH - 2;
+          cardIdx       = std::min<std::size_t>(cardIdx, n ? n - 1 : 0);
+          cardScroll    = std::min<std::size_t>(cardScroll, n > vis ? n - vis : 0);
   
           Card dummy{r, CardColor::BLACK};
           lines.push_back(text("Pick one `" +
             getCardView(dummy).label + "` to discard:"));
   
-          for (size_t i = 0; i < vis; ++i) {
-            size_t idx = i + cardScroll;
+          for (std::size_t i = 0; i < vis; ++i) {
+            std::size_t idx = i + cardScroll;
             if (idx >= n) break;
             std::string pre = (idx == cardIdx ? "→ " : "  ");
             lines.push_back(
@@ -830,8 +830,8 @@ Card GameView::runDiscardWizard(const BoardState& boardState) {
       }),
       [&](Event e) {
         if (mode == Mode::PICK_RANK) {
-          size_t n   = ranks.size();
-          size_t vis = paneH - 2;
+          std::size_t n   = ranks.size();
+          std::size_t vis = paneH - 2;
           if (e == Event::ArrowDown) {
             if (rankIdx + 1 < n) {
               rankIdx++;
@@ -857,8 +857,8 @@ Card GameView::runDiscardWizard(const BoardState& boardState) {
         } else {
           // PICK_CARD
           auto bucket = bucket_for(*currentRank);
-          size_t n   = bucket.size();
-          size_t vis = paneH - 2;
+          std::size_t n   = bucket.size();
+          std::size_t vis = paneH - 2;
           if (e == Event::ArrowDown) {
             if (cardIdx + 1 < n) {
               cardIdx++;

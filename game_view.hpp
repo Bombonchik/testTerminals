@@ -19,6 +19,7 @@
 #include "meld.hpp"
 #include "input_guard.hpp"
 #include "fmt/format.h"
+#include <algorithm>
 
 struct CardView {
     std::string label;

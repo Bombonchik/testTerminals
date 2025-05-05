@@ -17,6 +17,7 @@ public:
 private:
 #ifdef _WIN32
     DWORD originalMode;
+    CONSOLE_CURSOR_INFO  originalCursorInfo;
 #else
     struct termios original;
 #endif

@@ -212,7 +212,7 @@ void testShowMessagesWithBoard(GameView& gameView, CanastaConsole& console, Boar
         "This is a test message 2",
     };
     gameView.showStaticBoardWithMessages(messages, boardState);
-    std::this_thread::sleep_for(std::chrono::seconds(15));
+    std::this_thread::sleep_for(std::chrono::seconds(6));
     gameView.restoreInput();
 }
 
@@ -271,8 +271,8 @@ int main() {
     //testStringPromt(gameView, console);
     testShowMessagesWithBoard(gameView, console, boardState);
     testPromptChoiceWithBoard(gameView, console, boardState);
-    //testMeldWizard(gameView, console, boardState);
-    //testDiscardWizard(gameView, console, boardState);
+    testMeldWizard(gameView, console, boardState);
+    testDiscardWizard(gameView, console, boardState);
     // for (int i = 0; i < numPlayers; ++i) {
     //     launchTerminal(i);
     // }
