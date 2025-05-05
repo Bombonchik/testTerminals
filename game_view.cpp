@@ -96,7 +96,6 @@ void GameView::printMeld(const std::vector<MeldView>& melds) {
 
 void GameView::ftxuiPrintMeld(const std::vector<MeldView>& melds) {
 
-    // Build row-by-row exactly like your console version:
     std::vector<Element> rows;
     constexpr size_t maxRows = 8;
 
@@ -231,6 +230,7 @@ Element GameView::makeHandGrid(const Hand& hand) {
             cardColumn.push_back(card);
         }
     }
+    cardLayout.push_back(cardColumn);
 
     size_t maxSize = 0;
     for (auto& column : cardLayout)
@@ -309,7 +309,7 @@ CardView GameView::getCardView(const Card& card) {
 }
 
 Element GameView::makeCardElement(const Card& card, bool padded) {
-    // 1) pull your CardView
+    // 1) pull CardView
     CardView cv = getCardView(card);
 
     // 2) pick whether to pad or not
@@ -323,14 +323,14 @@ Element GameView::makeCardElement(const Card& card, bool padded) {
         | flex_grow;
 }
 
-std::string GameView::promptStringWithBoard(const std::string& question,
-    std::string& placeholder, const BoardState& boardState) {
-    // 1) Your local buffer
+std::string GameView::promptString(const std::string& question, std::string& placeholder) {
+    console.clear();
+    // 1) local buffer
     std::string buffer;
 
     // 2) Configure InputOption to *reference* that buffer
     InputOption option = InputOption::Default();
-    option.content     = &buffer;             // <<–– bind to your std::string
+    option.content     = &buffer;             // <<–– bind to std::string
     option.placeholder = StringRef(placeholder);        // <<–– bind to the caller’s placeholder
     option.on_enter    = [&] { screen.ExitLoopClosure()(); };
 
@@ -345,38 +345,132 @@ std::string GameView::promptStringWithBoard(const std::string& question,
     });
 
     screen.Loop(renderer);
-    //console.clear();
     // 4) buffer now holds the final text
     return buffer.substr(0, buffer.size() - 1);
 }
 
-int GameView::promptChoiceWithBoard(const std::string& question,
-    const std::vector<std::string>& options, const BoardState& boardState) {
+void GameView::disableInput() {
+    if (!inputGuard)
+      inputGuard.emplace();  // now console is in raw/no-echo mode
+}
+
+void GameView::restoreInput() {
+    inputGuard.reset();     // destructor runs, restoring original mode
+}
+
+
+void GameView::showStaticBoardWithMessages(
+    const std::vector<std::string>& messages, const BoardState& boardState) {
+        console.clear();
+        disableInput();
+
+        auto boardElem = makeBoard(boardState) | flex_grow;
+
+        // 3) Build the message box
+        std::vector<Element> lines;
+        for (auto& m : messages)
+          lines.push_back(text(m));
+        auto messagePane =
+          vbox(std::move(lines))
+          //| border
+          | size(HEIGHT, EQUAL, (int)messages.size() + 2);
+      
+        // 4) Compose full layout
+        auto document = vbox({
+          boardElem,
+          separator(),
+          messagePane
+        });
+      
+        // 5) One-shot render into a virtual Screen
+        auto screenBuff = Screen::Create(
+          Dimension::Full(),        // full terminal width
+          Dimension::Fit(document)  // height = content height
+        );
+        Render(screenBuff, document);
+      
+        // 6) Print it
+        std::cout
+          << screenBuff.ResetPosition()
+          << screenBuff.ToString()
+          << std::flush;
+  }
+
+int GameView::promptChoiceWithBoard(
+    const std::string& question,
+    const std::vector<std::string>& options,
+    const BoardState& boardState,
+    std::optional<const std::string> message) {
+
+    console.clear();
+    // Top: your board, grows to fill
     auto board = makeBoard(boardState) | flex_grow;
-    // 1) Local selected index
+
+    // Selection state
     int selected = 0;
+    int scroll   = 0;
+    const int paneH = std::min<int>((int)options.size() + 2, 8); 
+    // show up to 6 options + question/message
 
-    // 2) Configure RadioboxOption to *reference* it
-    RadioboxOption opt = RadioboxOption::Simple();
-    opt.entries  = options;        // can assign vector<string> directly
-    opt.selected = &selected;      // <<–– bind to your int
-    // opt.on_change can stay default
+    Component component = CatchEvent(
+        Renderer([&] {
+            // Build prompt lines
+            std::vector<Element> lines;
 
-    // 3) Build & render
-    auto menu = Radiobox(opt);
-    auto okButton = Button(" OK ", screen.ExitLoopClosure());
-    //auto container = Container::Vertical({radiobox, button});
-    auto promptBox = vbox({
-            text(question),
-            menu->Render() | frame,
-            okButton->Render() | center
-        })
-        | size(HEIGHT, EQUAL, 6);
-    auto root = vbox({ board, separator(), promptBox });
-    Component component = Renderer([&] { return root; });
+            if (message)
+                lines.push_back(text(message.value()));
+            lines.push_back(text(question));
+
+            // Visible window
+            int vis = paneH - (message ? 2 : 1);
+            scroll = std::min(scroll, (int)options.size() - vis);
+            scroll = std::max(scroll, 0);
+
+            // Draw options with arrow
+            for (int i = 0; i < vis; ++i) {
+                int idx = i + scroll;
+                if (idx >= (int)options.size()) break;
+                std::string prefix = (idx == selected ? "→ " : "  ");
+                lines.push_back(text(prefix + options[idx]));
+            }
+
+            auto promptBox = vbox(std::move(lines));
+
+            return vbox({
+                board,
+                separator(),
+                promptBox,
+            });
+        }),
+        [&](Event e) {
+            int n = options.size();
+            int vis = paneH - (message ? 2 : 1);
+
+            if (e == Event::ArrowDown) {
+                if (selected + 1 < n) {
+                selected++;
+                if (selected >= scroll + vis)
+                    scroll = selected - vis + 1;
+                }
+                return true;
+            }
+            if (e == Event::ArrowUp) {
+                if (selected > 0) {
+                selected--;
+                if (selected < scroll)
+                    scroll = selected;
+                }
+                return true;
+            }
+            if (e == Event::Return) {
+                screen.ExitLoopClosure()();
+                return true;
+            }
+            return false;
+        }
+    );
+
     screen.Loop(component);
-
-    //console.clear();
     return selected;
 }
 
@@ -448,3 +542,347 @@ Element GameView::makePlayerInfo(const PlayerPublicInfo& player) {
         text(", " + std::to_string(player.handCardCount)) | bold | (player.isCurrentTurn ? color(Color::Cyan) : color(Color::White)),
     });
 }
+
+std::vector<MeldRequest> GameView::runMeldWizard(const BoardState& boardState) {
+    console.clear();
+    // 1) Mutable hand + map for meld‐requests
+    Hand working = boardState.myHand;
+    std::map<Rank, MeldRequest> requestMap;
+
+    // 2) Wizard state
+    enum class Mode { PICK_RANK, PICK_CARDS };
+    Mode mode = Mode::PICK_RANK;
+    const std::vector<Rank> ALL_RANKS = {
+        Rank::Three, Rank::Four, Rank::Five, Rank::Six,
+        Rank::Seven, Rank::Eight, Rank::Nine, Rank::Ten,
+        Rank::Jack,  Rank::Queen, Rank::King, Rank::Ace
+    };
+    size_t rankIdx = 0, rankScroll = 0;
+    size_t cardIdx = 0, cardScroll = 0;
+    std::optional<Rank> currentRank;
+    std::vector<bool> cardSelected;
+    const int paneH = 6;
+
+    // Helpers
+    auto label_for_rank = [&](Rank r) {
+    int cnt = 0;
+    for (auto& c : working.getCards())
+        if (c.getRank() == r) ++cnt;
+    Card dummy{r, CardColor::BLACK};
+        return getCardView(dummy).label + " (" + std::to_string(cnt) + ")";
+    };
+    auto bucket_for = [&](Rank r) {
+        std::vector<Card> bucket;
+        for (auto& c : working.getCards()) {
+            if (c.getRank()==r ||
+            c.getRank()==Rank::Joker || c.getRank()==Rank::Two)
+            bucket.push_back(c);
+        }
+        return bucket;
+    };
+
+    // 3) Build the UI
+    Component component = CatchEvent(
+    Renderer([&]{    
+        // a) board at top
+        auto boardView = makeBoard(boardState) | flex_grow;
+
+        // b) wizard pane
+        std::vector<Element> lines;
+        if (mode == Mode::PICK_RANK) {
+            size_t n   = ALL_RANKS.size();
+            size_t vis = paneH - 2;
+            rankIdx    = std::min(rankIdx, n? n-1:0);
+            rankScroll = std::min(rankScroll, n>vis? n-vis:0);
+
+            lines.push_back(text("Select rank:"));
+            for (size_t i = 0; i < vis; ++i) {
+                size_t idx = i + rankScroll;
+                if (idx >= n) break;
+                    std::string pre = (idx==rankIdx?"→ ":"  ");
+                lines.push_back(text(pre + label_for_rank(ALL_RANKS[idx])));
+            }
+            lines.push_back(text("Enter=Pick  Esc=Finish")|dim);
+        } else {
+        // PICK_CARDS
+        Rank r        = *currentRank;
+        auto bucket   = bucket_for(r);
+        size_t n      = bucket.size();
+        size_t vis    = paneH - 2;
+        if (cardSelected.size()!=n)
+            cardSelected.assign(n,false);
+        cardIdx    = std::min(cardIdx, n?n-1:0);
+        cardScroll = std::min(cardScroll, n>vis? n-vis:0);
+
+        Card dummy{r, CardColor::BLACK};
+        lines.push_back(text("Pick cards for `"
+                        + getCardView(dummy).label +"`:"));
+        for (size_t i = 0; i < vis; ++i) {
+            size_t idx = i + cardScroll;
+            if (idx >= n) break;
+            std::string prefix = (idx==cardIdx ? "→ " : "  ");
+            std::string mark   = cardSelected[idx] ? "[x] " : "[ ] ";
+            lines.push_back(
+            hbox({
+                text(prefix + mark),
+                makeCardElement(bucket[idx], /*padded=*/false)
+            })
+            );
+        }
+        lines.push_back(text("Space=Toggle  Enter=Add  Esc=Back")|dim);
+        }
+
+        // no border/size on wizard
+        auto wizard = vbox(std::move(lines));
+
+        return vbox({ boardView, separator(), wizard });
+    }),
+    [&](Event e){
+        if (mode==Mode::PICK_RANK) {
+            size_t n   = ALL_RANKS.size();
+            size_t vis = paneH - 2;
+            if (e==Event::ArrowDown) {
+                if (rankIdx+1 < n) {
+                rankIdx++;
+                if (rankIdx >= rankScroll + vis)
+                    rankScroll = rankIdx - vis + 1;
+                }
+                return true;
+            }
+            if (e==Event::ArrowUp) {
+                if (rankIdx>0) {
+                    rankIdx--;
+                    if (rankIdx < rankScroll)
+                        rankScroll = rankIdx;
+                }
+                return true;
+            }
+            if (e==Event::Return) {
+                currentRank = ALL_RANKS[rankIdx];
+                mode = Mode::PICK_CARDS;
+                cardIdx = cardScroll = 0;
+                cardSelected.clear();
+                return true;
+            }
+            if (e==Event::Escape) {
+                screen.ExitLoopClosure()();
+                return true;
+            }
+        } else {
+        // PICK_CARDS
+            auto bucket = bucket_for(*currentRank);
+            size_t n   = bucket.size();
+            size_t vis = paneH - 2;
+            if (e==Event::ArrowDown) {
+                if (cardIdx+1 < n) {
+                    cardIdx++;
+                    if (cardIdx >= cardScroll + vis)
+                        cardScroll = cardIdx - vis + 1;
+                }
+                return true;
+            }
+            if (e==Event::ArrowUp) {
+                if (cardIdx>0) {
+                    cardIdx--;
+                    if (cardIdx < cardScroll)
+                        cardScroll = cardIdx;
+                }
+                return true;
+            }
+            if (e==Event::Character(' ')) {
+                cardSelected[cardIdx] = !cardSelected[cardIdx];
+                return true;
+            }
+            if (e==Event::Return) {
+                // gather picked
+                std::vector<Card> picked;
+                for (size_t i=0; i<bucket.size(); ++i)
+                    if (cardSelected[i])
+                        picked.push_back(bucket[i]);
+                if (!picked.empty()) {
+                    Rank natural = *currentRank;
+                    auto &mr = requestMap[natural];
+                    mr.addToRank = natural;
+                    mr.cards.insert(mr.cards.end(),
+                                    picked.begin(), picked.end());
+                    for (auto& c : picked)
+                        working.removeCard(c);
+                }
+                mode = Mode::PICK_RANK;
+                return true;
+            }
+            if (e==Event::Escape) {
+                mode = Mode::PICK_RANK;
+                return true;
+            }
+        }
+        return false;
+    }
+    );
+
+    screen.Loop(component);
+
+    // 4) Flatten into vector for server
+    std::vector<MeldRequest> result;
+    result.reserve(requestMap.size());
+    for (auto& kv : requestMap)
+        result.push_back(std::move(kv.second));
+    return result;
+}
+
+Card GameView::runDiscardWizard(const BoardState& boardState) {
+    console.clear();
+    // 1) Working copy of the hand
+    Hand working = boardState.myHand;
+  
+    // 2) Build a dynamic list of ranks present in hand
+    std::vector<Rank> ranks;
+    {
+      std::unordered_set<Rank> seen;
+      for (auto& c : working.getCards()) {
+        if (seen.insert(c.getRank()).second) {
+          ranks.push_back(c.getRank());
+        }
+      }
+    }
+  
+    // State
+    enum class Mode { PICK_RANK, PICK_CARD };
+    Mode mode = Mode::PICK_RANK;
+    size_t rankIdx = 0, rankScroll = 0;
+    size_t cardIdx = 0, cardScroll = 0;
+    std::optional<Rank> currentRank;
+    std::optional<Card> result;  // the selected card
+  
+    const int paneH = 6;  // bottom pane height
+  
+    // Helper: label for a rank
+    auto label_for_rank = [&](Rank r) {
+      int cnt = 0;
+      for (auto& c : working.getCards())
+        if (c.getRank() == r) ++cnt;
+      Card dummy{r, CardColor::BLACK};
+      return getCardView(dummy).label + " (" + std::to_string(cnt) + ")";
+    };
+  
+    // Helper: cards for a rank
+    auto bucket_for = [&](Rank r) {
+      std::vector<Card> bucket;
+      for (auto& c : working.getCards())
+        if (c.getRank() == r)
+          bucket.push_back(c);
+      return bucket;
+    };
+  
+    // 3) Build and run the UI
+    Component component = CatchEvent(
+      Renderer([&] {
+        auto boardView = makeBoard(boardState) | flex_grow;
+        std::vector<Element> lines;
+  
+        if (mode == Mode::PICK_RANK) {
+          // Rank list
+          size_t n   = ranks.size();
+          size_t vis = paneH - 2;
+          rankIdx    = std::min(rankIdx, n ? n - 1 : 0);
+          rankScroll = std::min(rankScroll, n > vis ? n - vis : 0);
+  
+          lines.push_back(text("Select rank to discard:"));
+          for (size_t i = 0; i < vis; ++i) {
+            size_t idx = i + rankScroll;
+            if (idx >= n) break;
+            std::string pre = (idx == rankIdx ? "→ " : "  ");
+            lines.push_back(text(pre + label_for_rank(ranks[idx])));
+          }
+          lines.push_back(text("Enter=Pick rank") | dim);
+        } else {
+          // Card list
+          Rank r        = *currentRank;
+          auto bucket   = bucket_for(r);
+          size_t n      = bucket.size();
+          size_t vis    = paneH - 2;
+          cardIdx       = std::min(cardIdx, n ? n - 1 : 0);
+          cardScroll    = std::min(cardScroll, n > vis ? n - vis : 0);
+  
+          Card dummy{r, CardColor::BLACK};
+          lines.push_back(text("Pick one `" +
+            getCardView(dummy).label + "` to discard:"));
+  
+          for (size_t i = 0; i < vis; ++i) {
+            size_t idx = i + cardScroll;
+            if (idx >= n) break;
+            std::string pre = (idx == cardIdx ? "→ " : "  ");
+            lines.push_back(
+              hbox({
+                text(pre),
+                makeCardElement(bucket[idx], /*padded=*/false)
+              })
+            );
+          }
+          lines.push_back(text("Enter=Discard") | dim);
+        }
+  
+        auto wizard = vbox(std::move(lines));
+        return vbox({ boardView, separator(), wizard });
+      }),
+      [&](Event e) {
+        if (mode == Mode::PICK_RANK) {
+          size_t n   = ranks.size();
+          size_t vis = paneH - 2;
+          if (e == Event::ArrowDown) {
+            if (rankIdx + 1 < n) {
+              rankIdx++;
+              if (rankIdx >= rankScroll + vis)
+                rankScroll = rankIdx - vis + 1;
+            }
+            return true;
+          }
+          if (e == Event::ArrowUp) {
+            if (rankIdx > 0) {
+              rankIdx--;
+              if (rankIdx < rankScroll)
+                rankScroll = rankIdx;
+            }
+            return true;
+          }
+          if (e == Event::Return) {
+            currentRank = ranks[rankIdx];
+            mode        = Mode::PICK_CARD;
+            cardIdx = cardScroll = 0;
+            return true;
+          }
+        } else {
+          // PICK_CARD
+          auto bucket = bucket_for(*currentRank);
+          size_t n   = bucket.size();
+          size_t vis = paneH - 2;
+          if (e == Event::ArrowDown) {
+            if (cardIdx + 1 < n) {
+              cardIdx++;
+              if (cardIdx >= cardScroll + vis)
+                cardScroll = cardIdx - vis + 1;
+            }
+            return true;
+          }
+          if (e == Event::ArrowUp) {
+            if (cardIdx > 0) {
+              cardIdx--;
+              if (cardIdx < cardScroll)
+                cardScroll = cardIdx;
+            }
+            return true;
+          }
+          if (e == Event::Return) {
+            // finalize
+            result = bucket[cardIdx];
+            screen.ExitLoopClosure()();
+            return true;
+          }
+        }
+        return false;
+      }
+    );
+  
+    screen.Loop(component);
+    return result.value();  // always set by Enter in PICK_CARD
+  }

@@ -16,11 +16,11 @@ find_package(FTXUI REQUIRED
         component
 )
 
-# Define your executables
+# Define executables
 add_executable(launcher main.cpp
         canasta_console.cpp
         canasta_console.hpp card.cpp card.hpp game_view.cpp game_view.hpp hand.cpp hand.hpp
-        client_deck.hpp client_deck.cpp player_public_info.hpp)
+        client_deck.hpp client_deck.cpp player_public_info.hpp meld.hpp input_guard.hpp input_guard.cpp)
 
 # Link libraries provided by Conan
 #target_link_libraries(launcher sqlitecpp sqlite3)

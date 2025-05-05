@@ -181,19 +181,13 @@ void testPrintMeld(GameView& gameView, CanastaConsole& console) {
     gameView.ftxuiPrintMeld(melds);
 }
 
-/*void testPromts(GameView& gameView, CanastaConsole& console) {
+void testStringPromt(GameView& gameView, CanastaConsole& console) {
     std::string question = "What is your name?";
     std::string placeholder = "Enter your name";
     std::string answer = gameView.promptString(question, placeholder);
 
-    std::vector<std::string> options = {"Option 1", "Option 2", "Option 3"};
-    int choice = gameView.promptChoice("Choose an option:", options);
-    if (answer[answer.size() - 1] == '\n') {
-        console.print("yes", CanastaConsole::Color::BrightCyan);
-    }
     console.print("Your answer: " + answer, CanastaConsole::Color::BrightCyan, true);
-    console.print("You chose: " + options[choice], CanastaConsole::Color::BrightCyan, true);
-}*/
+}
 
 BoardState getTestBoardState() {
     BoardState boardState;
@@ -203,8 +197,8 @@ BoardState getTestBoardState() {
     boardState.deckState = ClientDeck(20, Card(Rank::Five, CardColor::RED), 5, false);
     boardState.myPlayer = PlayerPublicInfo{"Main Man", 13, false};
     boardState.oppositePlayer = PlayerPublicInfo{"Front Man", 9, true};
-    boardState.leftPlayer = PlayerPublicInfo{"Left Man", 14, false};
-    boardState.rightPlayer = PlayerPublicInfo{"Right Man", 7, false};
+    //boardState.leftPlayer = PlayerPublicInfo{"Left Man", 14, false};
+    //boardState.rightPlayer = PlayerPublicInfo{"Right Man", 7, false};
     boardState.myTeamTotalScore = 590;
     boardState.opponentTeamTotalScore = 375;
     boardState.myTeamMeldPoints = 70;
@@ -212,28 +206,73 @@ BoardState getTestBoardState() {
     return boardState;
 }
 
-void testPromptChoiceWithBoard(GameView& gameView, CanastaConsole& console) {
+void testShowMessagesWithBoard(GameView& gameView, CanastaConsole& console, BoardState& boardState) {
+    std::vector<std::string> messages = {
+        "This is a test message 1",
+        "This is a test message 2",
+    };
+    gameView.showStaticBoardWithMessages(messages, boardState);
+    std::this_thread::sleep_for(std::chrono::seconds(15));
+    gameView.restoreInput();
+}
+
+void testPromptChoiceWithBoard(GameView& gameView, CanastaConsole& console, BoardState& boardState) {
     // std::string question = "What is your name?";
     // std::string placeholder = "Enter your name";
     // std::string answer = gameView.promptStringWithBoard(question, placeholder, BoardState());
 
-    std::vector<std::string> options = {"Option 1", "Option 2", "Option 3"};
-    int choice = gameView.promptChoiceWithBoard("Choose an option:", options, getTestBoardState());
+    std::vector<std::string> options1 = {"Draw a card from Deck", "Take Discard Pile"};
+    std::vector<std::string> options2;
+    int choice1 = gameView.promptChoiceWithBoard("Choose an action:", options1, boardState, "Test");
+    int choice2;
+    if (choice1 == 0) {
+        options2 = {"Melding", "Discard a card"};
+        choice2 = gameView.promptChoiceWithBoard("Choose an action:", options2, boardState);
+    } else if (choice1 == 1) {
+        options2 = {"Melding", "Revert"};
+        choice2 = gameView.promptChoiceWithBoard("Choose an action:", options2, boardState, "Hello World!");
+    } 
 
     //console.print("Your answer: " + answer, CanastaConsole::Color::BrightCyan, true);
-    console.print("You chose: " + options[choice], CanastaConsole::Color::BrightCyan, true);
+    console.print("You chose: " + options1[choice1], CanastaConsole::Color::BrightCyan, true);
+    console.print("You chose: " + options2[choice2], CanastaConsole::Color::BrightCyan, true);
+}
+
+void testMeldWizard(GameView& gameView, CanastaConsole& console, BoardState& boardState) {
+    std::vector<MeldRequest> meldRequests = gameView.runMeldWizard(boardState);
+    console.print("Meld Requests:", CanastaConsole::Color::BrightCyan, true);
+    for (const auto& meldRequest : meldRequests) {
+        console.print("Rank: " + std::to_string(meldRequest.addToRank.has_value() ? static_cast<int>(meldRequest.addToRank.value()): 0), CanastaConsole::Color::BrightCyan, true);
+        console.print("Cards: ", CanastaConsole::Color::BrightCyan, true);
+        for (const auto& card : meldRequest.cards) {
+            gameView.printCard(card);
+            console.printSpace();
+        }
+        console.printNewLine();
+    }
+}
+
+void testDiscardWizard(GameView& gameView, CanastaConsole& console, BoardState& boardState) {
+    Card card = gameView.runDiscardWizard(boardState);
+    console.print("Discarded Card:", CanastaConsole::Color::BrightCyan, true);
+    gameView.printCard(card);
+    console.printNewLine();
 }
 
 int main() {
     int numPlayers = 4;
     GameView gameView;
     CanastaConsole console;
-
-    //testCanastaConsole();
-    //testPrintCard(gameView);
+    BoardState boardState = getTestBoardState();
+    testCanastaConsole();
+    testPrintCard(gameView, console);
     //testPrintHand(gameView);
     //testPrintMeld(gameView, console);
-    testPromptChoiceWithBoard(gameView, console);
+    //testStringPromt(gameView, console);
+    testShowMessagesWithBoard(gameView, console, boardState);
+    testPromptChoiceWithBoard(gameView, console, boardState);
+    //testMeldWizard(gameView, console, boardState);
+    //testDiscardWizard(gameView, console, boardState);
     // for (int i = 0; i < numPlayers; ++i) {
     //     launchTerminal(i);
     // }
